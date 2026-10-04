@@ -8,7 +8,23 @@ export interface OllamaConfig {
   numCtx: number;
 }
 
-export class OllamaUnavailableError extends Error {}
+export class OllamaUnavailableError extends Error { }
+
+export async function listModels(baseUrl: string): Promise<string[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/tags`);
+  } catch (err) {
+    throw new OllamaUnavailableError(
+      `Cannot reach Ollama at ${baseUrl}: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`Ollama returned HTTP ${res.status}: ${await res.text()}`);
+  }
+  const data = (await res.json()) as { models?: Array<{ name?: string }> };
+  return (data.models ?? []).map(model => model.name).filter((name): name is string => Boolean(name));
+}
 
 interface ChatResponse {
   message?: { content?: string };

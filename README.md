@@ -62,6 +62,9 @@ Then install it:
 # VS Code
 code --install-extension supersearch-0.0.1.vsix
 
+# Windsurf
+windsurf --install-extension supersearch-0.0.1.vsix
+```
 
 Or in the UI: Extensions view → `⋯` menu → **Install from VSIX…**
 
@@ -71,7 +74,7 @@ Or in the UI: Extensions view → `⋯` menu → **Install from VSIX…**
 cd supersearch
 npm install && npm run compile
 ln -s "$PWD" ~/.vscode/extensions/local.supersearch-0.0.1
-
+```
 
 Restart the editor.
 
@@ -80,9 +83,11 @@ Restart the editor.
 1. Open a workspace folder.
 2. Click the **SuperSearch** icon in the activity bar (or run
    `SuperSearch: Open Panel` from the command palette).
-3. Enter the search string and a context description, press **Search**
+3. Choose an Ollama model from the **Ollama model** menu. The menu is loaded
+   from `/api/tags`; use the refresh button after installing a new model.
+4. Enter the search string and a context description, press **Search**
    (or Enter in the context field).
-4. Wait while matches are graded — progress is shown in the panel.
+5. Wait while matches are graded — progress is shown in the panel.
 5. Click a result to jump to it.
 
 ## Settings

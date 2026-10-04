@@ -52,7 +52,7 @@
         "supersearch.model": {
           "type": "string",
           "default": "tev1:0.8b",
-          "description": "Ollama decision model to use"
+          "description": "Ollama decision model to use; the sidebar model menu can update this per workspace"
         },
         "supersearch.contextLines": {
           "type": "number",

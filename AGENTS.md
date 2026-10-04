@@ -20,8 +20,9 @@ Workspace text search refined by a local Ollama decision model.
 - `src/search.ts` — classic case-insensitive substring search via streaming `ripgrep` JSON,
   reads only files with matches, captures ±`contextLines` (default 50) per match;
   `snippetForModel` trims to fit the model. Searches each workspace root independently.
-- `src/ollama.ts` — calls `POST /api/chat` on the decision model; grades each candidate
-  A–E (one call per candidate, bounded concurrency). Results are filtered/ranked by grade.
+- `src/ollama.ts` — calls `GET /api/tags` to discover local models and `POST /api/chat`
+  on the selected decision model; grades each candidate A–E (one call per candidate,
+  bounded concurrency). Results are filtered/ranked by grade.
 
 ## Ollama decision model (tev1:0.8b)
 

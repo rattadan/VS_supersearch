@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { searchWorkspace, snippetForModel, SearchCandidate } from './search';
-import { gradeCandidate, mapPool, OllamaUnavailableError, Grade } from './ollama';
+import { gradeCandidate, listModels, mapPool, OllamaUnavailableError, Grade } from './ollama';
 
 interface GradedCandidate extends SearchCandidate {
   grade: Grade;
@@ -10,7 +10,7 @@ export class SuperSearchViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private generation = 0;
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(private readonly extensionUri: vscode.Uri) { }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -25,8 +25,29 @@ export class SuperSearchViewProvider implements vscode.WebviewViewProvider {
         this.postStatus('Cancelled.');
       } else if (msg.type === 'open') {
         void this.openAt(String(msg.file), Number(msg.line));
+      } else if (msg.type === 'loadModels') {
+        void this.loadModels();
+      } else if (msg.type === 'selectModel') {
+        void this.selectModel(String(msg.model ?? ''));
       }
     });
+    void this.loadModels();
+  }
+
+  private async loadModels(): Promise<void> {
+    try {
+      const models = await listModels(this.cfg().baseUrl);
+      const configured = this.cfg().model;
+      this.view?.webview.postMessage({ type: 'models', models, selected: models.includes(configured) ? configured : models[0] ?? configured });
+    } catch (err) {
+      this.postStatus(`Could not load Ollama models: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async selectModel(model: string): Promise<void> {
+    if (!model) { return; }
+    await vscode.workspace.getConfiguration('supersearch').update('model', model, vscode.ConfigurationTarget.Workspace);
+    this.postStatus(`Model selected: ${model}`);
   }
 
   private cfg() {
@@ -162,7 +183,10 @@ export class SuperSearchViewProvider implements vscode.WebviewViewProvider {
     background: var(--vscode-input-background); color: var(--vscode-input-foreground);
     border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px;
   }
-  input:focus { outline: 1px solid var(--vscode-focusBorder); }
+  input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); }
+  select { flex: 1; min-width: 0; padding: 5px 7px; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); }
+  .model-row { display: flex; gap: 6px; }
+  .model-row button { flex: none; width: 32px; padding: 4px; }
   .row { display: flex; gap: 6px; margin-top: 10px; }
   button {
     flex: 1; padding: 6px; border: none; cursor: pointer;
@@ -195,6 +219,11 @@ export class SuperSearchViewProvider implements vscode.WebviewViewProvider {
 </style>
 </head>
 <body>
+  <label for="model">Ollama model</label>
+  <div class="model-row">
+    <select id="model"><option value="">Loading models…</option></select>
+    <button id="refresh" class="secondary" title="Refresh Ollama models">↻</button>
+  </div>
   <label for="q">Search string</label>
   <input id="q" type="text" placeholder='e.g. Liq' autofocus>
   <label for="ctx">Context description</label>
@@ -215,12 +244,28 @@ export class SuperSearchViewProvider implements vscode.WebviewViewProvider {
   }
   $('go').onclick = submit;
   $('stop').onclick = () => vscode.postMessage({ type: 'cancel' });
+  $('refresh').onclick = () => vscode.postMessage({ type: 'loadModels' });
+  $('model').onchange = () => vscode.postMessage({ type: 'selectModel', model: $('model').value });
   $('ctx').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
   $('q').addEventListener('keydown', e => { if (e.key === 'Enter') $('ctx').focus(); });
 
   window.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'status') { $('status').textContent = m.text; }
+    if (m.type === 'models') {
+      const select = $('model');
+      select.innerHTML = '';
+      for (const model of m.models) {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        option.selected = model === m.selected;
+        select.appendChild(option);
+      }
+      if (!m.models.length) {
+        select.innerHTML = '<option value="">No models found</option>';
+      }
+    }
     if (m.type === 'results') {
       if (m.clear) { $('results').innerHTML = ''; }
       for (const it of m.items) {
