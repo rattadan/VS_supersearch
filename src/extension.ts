@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SuperSearchViewProvider } from './viewProvider';
 
 export function activate(context: vscode.ExtensionContext): void {
+  console.log('SuperSearch activating');
   const provider = new SuperSearchViewProvider(context.extensionUri);
 
   context.subscriptions.push(
@@ -12,4 +13,4 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 }
 
-export function deactivate(): void {}
+export function deactivate(): void { }

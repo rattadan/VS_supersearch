@@ -1,4 +1,7 @@
 import * as vscode from 'vscode';
+import { spawn, ChildProcess } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { platform } from 'node:process';
 
 export interface SearchCandidate {
   uri: vscode.Uri;
@@ -11,11 +14,156 @@ export interface SearchCandidate {
   preview: string; // the matched line text, trimmed
 }
 
-const MAX_FILE_BYTES = 512 * 1024;
 const HARD_MATCH_CAP = 500;
 
-function isProbablyBinary(text: string): boolean {
-  return text.includes('\0');
+interface RipgrepMatch {
+  type?: string;
+  data?: {
+    path?: { text?: string };
+    line_number?: number;
+    submatches?: Array<{ start?: number }>;
+  };
+}
+
+function ripgrepCommand(): string {
+  return platform === 'win32' ? 'rg.exe' : 'rg';
+}
+
+function parseExcludeGlobs(excludeGlob: string): string[] {
+  return excludeGlob
+    .split(',')
+    .map(glob => glob.trim())
+    .filter(Boolean);
+}
+
+function buildRipgrepArgs(query: string, excludeGlob: string): string[] {
+  const args = [
+    '--json',
+    '--line-number',
+    '--column',
+    '--no-heading',
+    '--color=never',
+    '--fixed-strings',
+    '--ignore-case',
+    '--hidden',
+    '--glob', '!.git',
+    '--glob', '!node_modules'
+  ];
+  for (const glob of parseExcludeGlobs(excludeGlob)) {
+    args.push('--glob', `!${glob}`);
+  }
+  return [...args, '--', query, '.'];
+}
+
+function contextCandidate(
+  uri: vscode.Uri,
+  text: string,
+  line: number,
+  column: number,
+  contextLines: number
+): SearchCandidate {
+  const lines = text.split(/\r?\n/);
+  const safeLine = Math.min(Math.max(0, line), Math.max(0, lines.length - 1));
+  const start = Math.max(0, safeLine - contextLines);
+  const end = Math.min(lines.length - 1, safeLine + contextLines);
+  const width = String(end + 1).length;
+  const snippetLines: string[] = [];
+  for (let j = start; j <= end; j++) {
+    const marker = j === safeLine ? '>>>' : '   ';
+    snippetLines.push(`${marker} ${String(j + 1).padStart(width)} | ${lines[j]}`);
+  }
+  return {
+    uri,
+    filePath: vscode.workspace.asRelativePath(uri),
+    line: safeLine,
+    column,
+    contextStart: start,
+    contextEnd: end,
+    snippet: snippetLines.join('\n'),
+    preview: lines[safeLine]?.trim() ?? ''
+  };
+}
+
+async function searchRoot(
+  root: vscode.Uri,
+  query: string,
+  contextLines: number,
+  excludeGlob: string,
+  candidates: SearchCandidate[],
+  fileCache: Map<string, Promise<string>>,
+  isCancelled: () => boolean,
+  onProgress?: (scanned: number, found: number) => void
+): Promise<void> {
+  const rootPath = root.fsPath;
+  const child: ChildProcess = spawn(
+    ripgrepCommand(),
+    buildRipgrepArgs(query, excludeGlob),
+    { cwd: rootPath, stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  if (!child.stdout || !child.stderr) {
+    child.kill();
+    return;
+  }
+  const output = createInterface({ input: child.stdout });
+  const terminate = () => {
+    if (!child.killed) {
+      child.kill();
+    }
+  };
+  const cancellationTimer = setInterval(() => {
+    if (isCancelled() || candidates.length >= HARD_MATCH_CAP) {
+      terminate();
+    }
+  }, 50);
+  let scannedFiles = 0;
+
+  try {
+    for await (const rawLine of output) {
+      if (isCancelled() || candidates.length >= HARD_MATCH_CAP) {
+        terminate();
+        break;
+      }
+      let match: RipgrepMatch;
+      try {
+        match = JSON.parse(rawLine) as RipgrepMatch;
+      } catch {
+        continue;
+      }
+      if (match.type !== 'match' || !match.data?.path?.text || !match.data.line_number) {
+        continue;
+      }
+
+      const absolutePath = vscode.Uri.joinPath(root, match.data.path.text).fsPath;
+      const uri = vscode.Uri.file(absolutePath);
+      const line = match.data.line_number - 1;
+      const column = Math.max(0, match.data.submatches?.[0]?.start ?? 0);
+      let fileText = fileCache.get(absolutePath);
+      if (!fileText) {
+        fileText = Promise.resolve(vscode.workspace.fs.readFile(uri))
+          .then(bytes => Buffer.from(bytes).toString('utf8'));
+        fileCache.set(absolutePath, fileText);
+        scannedFiles++;
+      }
+      try {
+        const text = await fileText;
+        if (text.includes('\0')) {
+          continue;
+        }
+        candidates.push(contextCandidate(uri, text, line, column, contextLines));
+        onProgress?.(scannedFiles, candidates.length);
+      } catch {
+        // The file may have changed or become inaccessible while rg was running.
+      }
+    }
+    await new Promise<void>(resolve => child.once('close', () => resolve()));
+  } finally {
+    clearInterval(cancellationTimer);
+    output.close();
+    child.stderr.resume();
+    if (!child.killed && (isCancelled() || candidates.length >= HARD_MATCH_CAP)) {
+      terminate();
+    }
+  }
 }
 
 export async function searchWorkspace(
@@ -25,58 +173,13 @@ export async function searchWorkspace(
   isCancelled: () => boolean,
   onProgress?: (scanned: number, found: number) => void
 ): Promise<SearchCandidate[]> {
-  const files = await vscode.workspace.findFiles('**/*', excludeGlob, 10000);
   const candidates: SearchCandidate[] = [];
-  const needle = query.toLowerCase();
-
-  for (const uri of files) {
+  const fileCache = new Map<string, Promise<string>>();
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
     if (isCancelled() || candidates.length >= HARD_MATCH_CAP) {
       break;
     }
-    let text: string;
-    try {
-      const stat = await vscode.workspace.fs.stat(uri);
-      if (stat.size > MAX_FILE_BYTES) {
-        continue;
-      }
-      const bytes = await vscode.workspace.fs.readFile(uri);
-      text = Buffer.from(bytes).toString('utf8');
-    } catch {
-      continue;
-    }
-    if (isProbablyBinary(text)) {
-      continue;
-    }
-
-    const lines = text.split(/\r?\n/);
-    for (let i = 0; i < lines.length; i++) {
-      const col = lines[i].toLowerCase().indexOf(needle);
-      if (col === -1) {
-        continue;
-      }
-      const start = Math.max(0, i - contextLines);
-      const end = Math.min(lines.length - 1, i + contextLines);
-      const width = String(end + 1).length;
-      const snippetLines: string[] = [];
-      for (let j = start; j <= end; j++) {
-        const marker = j === i ? '>>>' : '   ';
-        snippetLines.push(`${marker} ${String(j + 1).padStart(width)} | ${lines[j]}`);
-      }
-      candidates.push({
-        uri,
-        filePath: vscode.workspace.asRelativePath(uri),
-        line: i,
-        column: col,
-        contextStart: start,
-        contextEnd: end,
-        snippet: snippetLines.join('\n'),
-        preview: lines[i].trim()
-      });
-      if (candidates.length >= HARD_MATCH_CAP) {
-        break;
-      }
-    }
-    onProgress?.(files.indexOf(uri) + 1, candidates.length);
+    await searchRoot(folder.uri, query, contextLines, excludeGlob, candidates, fileCache, isCancelled, onProgress);
   }
   return candidates;
 }

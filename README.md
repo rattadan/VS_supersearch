@@ -13,8 +13,9 @@ described. Results are filtered and ranked by grade.
 1. You provide two inputs in the sidebar panel:
    - **Search string** — the literal text to find (e.g. `Liq`)
    - **Context description** — what you're looking for (e.g. `A button with label`)
-2. SuperSearch does a classic case-insensitive substring search across the
-   workspace and captures ±`contextLines` (default 50) around every match.
+2. SuperSearch runs a classic case-insensitive substring search using the
+   workspace's `ripgrep` executable, reads only files containing matches, and
+   captures ±`contextLines` (default 50) around every match.
 3. Each candidate is sent to the Ollama decision model, which returns a
    letter grade:
    - **A** — exactly the kind of code described
@@ -86,16 +87,16 @@ Restart the editor.
 
 ## Settings
 
-| Setting | Default | Description |
-|---|---|---|
-| `supersearch.ollamaUrl` | `http://localhost:11434` | Ollama server URL |
-| `supersearch.model` | `tev1:0.8b` | Decision model name |
-| `supersearch.contextLines` | `50` | Context lines captured around each match |
-| `supersearch.modelContextChars` | `3500` | Max snippet chars sent to the model (match-centered) |
-| `supersearch.maxCandidates` | `40` | Max raw matches sent to the model |
-| `supersearch.concurrency` | `2` | Parallel decision requests |
-| `supersearch.excludeGlob` | `**/{node_modules,.git,…}/**` | Files excluded from search |
-| `supersearch.acceptGrades` | `["A","B","C"]` | Grades shown in results |
+| Setting                         | Default                       | Description                                          |
+| ------------------------------- | ----------------------------- | ---------------------------------------------------- |
+| `supersearch.ollamaUrl`         | `http://localhost:11434`      | Ollama server URL                                    |
+| `supersearch.model`             | `tev1:0.8b`                   | Decision model name                                  |
+| `supersearch.contextLines`      | `50`                          | Context lines captured around each match             |
+| `supersearch.modelContextChars` | `3500`                        | Max snippet chars sent to the model (match-centered) |
+| `supersearch.maxCandidates`     | `40`                          | Max raw matches sent to the model                    |
+| `supersearch.concurrency`       | `2`                           | Parallel decision requests                           |
+| `supersearch.excludeGlob`       | `**/{node_modules,.git,…}/**` | Files excluded from search                           |
+| `supersearch.acceptGrades`      | `["A","B","C"]`               | Grades shown in results                              |
 
 ## Tips
 

@@ -9,14 +9,17 @@ Workspace text search refined by a local Ollama decision model.
 - `npm run watch` — incremental compile
 - Debug: open folder in VS Code/Windsurf, press **F5** (Extension Development Host),
   or run `windsurf --extensionDevelopmentPath=<repo> <workspace-folder>`
+- Package + install: `npx --yes @vscode/vsce package --allow-missing-repository`
+  then `windsurf --install-extension supersearch-<version>.vsix` (vsce is not a devDep)
 
 ## Architecture
 
 - `src/extension.ts` — registers the `supersearch.view` sidebar webview + `supersearch.open` command.
 - `src/viewProvider.ts` — sidebar UI (2 inputs: search string + context description),
   orchestrates the pipeline, renders graded results, opens matches at line.
-- `src/search.ts` — classic case-insensitive substring search via `workspace.fs`,
-  captures ±`contextLines` (default 50) per match; `snippetForModel` trims to fit the model.
+- `src/search.ts` — classic case-insensitive substring search via streaming `ripgrep` JSON,
+  reads only files with matches, captures ±`contextLines` (default 50) per match;
+  `snippetForModel` trims to fit the model. Searches each workspace root independently.
 - `src/ollama.ts` — calls `POST /api/chat` on the decision model; grades each candidate
   A–E (one call per candidate, bounded concurrency). Results are filtered/ranked by grade.
 
