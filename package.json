@@ -1,0 +1,111 @@
+{
+  "name": "supersearch",
+  "displayName": "SuperSearch",
+  "description": "Workspace text search refined by a local Ollama decision model (tev1:0.8b)",
+  "version": "0.0.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "supersearch.open",
+        "title": "SuperSearch: Open Panel"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "supersearch",
+          "title": "SuperSearch",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "supersearch": [
+        {
+          "id": "supersearch.view",
+          "name": "Semantic Search",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SuperSearch",
+      "properties": {
+        "supersearch.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL of the local Ollama server"
+        },
+        "supersearch.model": {
+          "type": "string",
+          "default": "tev1:0.8b",
+          "description": "Ollama decision model to use"
+        },
+        "supersearch.contextLines": {
+          "type": "number",
+          "default": 50,
+          "description": "Lines of code captured above and below each match"
+        },
+        "supersearch.modelContextChars": {
+          "type": "number",
+          "default": 3500,
+          "description": "Max characters of the snippet sent to the decision model (centered on the match)"
+        },
+        "supersearch.maxCandidates": {
+          "type": "number",
+          "default": 40,
+          "description": "Maximum number of raw matches sent to the decision model"
+        },
+        "supersearch.concurrency": {
+          "type": "number",
+          "default": 2,
+          "description": "Parallel decision requests to Ollama"
+        },
+        "supersearch.excludeGlob": {
+          "type": "string",
+          "default": "**/{node_modules,.git,dist,out,build,target,vendor,.next,coverage,bin,obj}/**",
+          "description": "Glob pattern for files excluded from search"
+        },
+        "supersearch.acceptGrades": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E"
+            ]
+          },
+          "default": [
+            "A",
+            "B",
+            "C"
+          ],
+          "description": "Model grades shown as results (A=perfect match ... E=no match)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.5"
+  }
+}
